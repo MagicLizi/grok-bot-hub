@@ -1,0 +1,44 @@
+.build/
+build/
+.swiftpm/
+*.app/
+*.dSYM/
+
+# Local Bot profiles, browser sessions and debugging endpoints
+profiles.json*
+Profiles/
+sand-data/
+.grokbot/
+DevToolsActivePort
+Cookies*
+Login Data*
+Web Data*
+Local State
+*.sqlite*
+*.db
+*.db-*
+
+# Credentials and machine-local configuration
+.env
+.env.*
+!.env.example
+credentials.json
+auth.json
+tokens.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.keychain*
+*.mobileprovision
+
+# Local logs, captures and editor/OS metadata
+*.log
+logs/
+screenshots/
+captures/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
