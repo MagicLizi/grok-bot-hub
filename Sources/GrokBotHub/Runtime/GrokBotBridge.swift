@@ -22,6 +22,11 @@ struct GrokBotBridge {
         _ = try await run("1", timeout: 8)
     }
 
+    /// 让这个实例通过自己的窗口接口恢复并聚焦主窗口，不经同 bundle id 的临时进程。
+    func focusWindow() async throws {
+        _ = try await callMain("focusWindow", timeout: 5)
+    }
+
     func isReady() async throws -> Bool {
         try await run("typeof window.desktop?.main?.getCursorAuthStatus === 'function'") as? Bool ?? false
     }

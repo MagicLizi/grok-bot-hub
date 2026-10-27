@@ -33,6 +33,12 @@ public struct ComputerMaintenanceSchedule {
         nextActivationAt = now.addingTimeInterval(Self.activationInterval)
     }
 
+    /// 前台轮换被打断不算电脑恢复失败，也不推迟到几分钟后的失败退避。
+    public mutating func deferActivation(at now: Date) {
+        nextRecoveryAt = now.addingTimeInterval(Self.checkInterval)
+        inspected(at: now)
+    }
+
     public mutating func completed(success: Bool, at now: Date) {
         if success {
             failures = 0

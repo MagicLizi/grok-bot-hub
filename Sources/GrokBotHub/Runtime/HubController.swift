@@ -243,23 +243,28 @@ final class HubController {
         defer { computerForegroundBusy = false }
         var failure: Error?
         do {
-            bot.openComputerPane()
-            for _ in 0..<24 {
+            try await bot.prepareComputerWindow(isCurrent: { isCurrent() && bot.pid == pid })
+            var attempt = ForegroundActivationAttempt(targetPID: pid, startedAt: ProcessInfo.processInfo.systemUptime)
+            activation: while true {
                 try Task.checkCancellation()
                 guard isCurrent(), bot.pid == pid else { throw CancellationError() }
-                if NSWorkspace.shared.frontmostApplication?.processIdentifier == pid { break }
+                guard !isMacScreenLocked() else { throw BotController.ComputerError.screenLocked }
+                let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                switch attempt.observe(frontmostPID: frontmostPID, at: ProcessInfo.processInfo.systemUptime) {
+                case .confirmed:
+                    bot.computerWasActivated(at: Date())
+                    break activation
+                case .timedOut:
+                    bot.log("窗口激活未完成：目标 pid \(pid)，前台 pid \(frontmostPID ?? -1)", .warning)
+                    throw BotController.ComputerError.cannotActivate
+                case .interrupted:
+                    bot.log("前台轮换中断：目标 pid \(pid)，前台 pid \(frontmostPID ?? -1)", .warning)
+                    throw BotController.ComputerError.activationInterrupted
+                case .waiting:
+                    break
+                }
                 try await Task.sleep(nanoseconds: 250_000_000)
             }
-            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
-                throw BotController.ComputerError.cannotActivate
-            }
-            try await Task.sleep(nanoseconds: 3_000_000_000)
-            guard isCurrent(), bot.pid == pid else { throw CancellationError() }
-            guard !isMacScreenLocked() else { throw BotController.ComputerError.screenLocked }
-            guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
-                throw BotController.ComputerError.cannotActivate
-            }
-            bot.computerWasActivated(at: Date())
         } catch {
             failure = error
         }

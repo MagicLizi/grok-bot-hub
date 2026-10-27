@@ -70,6 +70,7 @@ final class BotController: Identifiable {
     private(set) var computerState: ComputerState?
     private(set) var computerCheckedAt: Date?
     private(set) var computerIssue: String?
+    private(set) var computerForegroundNote: String?
     private(set) var computerRetryAt: Date?
     private(set) var lastComputerActivationAt: Date?
     private(set) var autoComputerRecoveries = 0
@@ -192,10 +193,11 @@ final class BotController: Identifiable {
 
     /// 用同一个数据目录再启动一次 Grok Bot：单实例锁会让新进程立刻退出，并把参数（包括深链）
     /// 转交给这个 Bot 自己的实例，同时把它的窗口带到前台。深链因此只会送到这一个实例。
-    private func sendToRunningInstance(deepLink: String? = nil) {
+    private func sendToRunningInstance(deepLink: String? = nil, activate: Bool = true) {
         guard let appURL = GrokBotApp.locate() else { return }
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = true
+        config.activates = activate
         // 不带 --remote-debugging-port，避免这个临时进程覆盖 DevToolsActivePort
         config.arguments = ["\(LaunchArguments.userDataDirFlag)=\(profile.dataDir.path)"] + (deepLink.map { [$0] } ?? [])
         config.addsToRecentItems = false
@@ -648,13 +650,14 @@ final class BotController: Identifiable {
     private static let computerPaneLink = "grokbot://app/v1/sidebar?tab=computer"
 
     enum ComputerError: LocalizedError {
-        case screenLocked, cannotActivate, notLoggedIn, paused, notShown, timedOut
+        case screenLocked, cannotActivate, activationInterrupted, notLoggedIn, paused, notShown, timedOut
         case stuck(ComputerState)
 
         var errorDescription: String? {
             switch self {
             case .screenLocked: return "这台 Mac 已锁屏，解锁后自动继续检查和恢复电脑"
             case .cannotActivate: return "没能把这个 Bot 的窗口带到前台，稍后会重试"
+            case .activationInterrupted: return "窗口已显示，但前台轮换被打断；稍后会自动重试"
             case .notLoggedIn: return "这个 Bot 尚未登录，请先完成登录"
             case .paused: return "Grok Bot 显示电脑正在重建或已暂时暂停，管家会继续检查，等待服务恢复"
             case .notShown: return "没找到电脑画面，请在 Grok Bot 里确认这个 Bot 已配置电脑"
@@ -728,11 +731,38 @@ final class BotController: Identifiable {
         sendToRunningInstance(deepLink: Self.computerPaneLink)
     }
 
+    /// 已有电脑画面时直接聚焦正确实例；只有需要导航时才转交深链。
+    func prepareComputerWindow(isCurrent: @MainActor () -> Bool) async throws {
+        guard isCurrent() else { throw CancellationError() }
+        if let client {
+            let bridge = GrokBotBridge(client: client)
+            do {
+                let state = try await bridge.computerState()
+                guard isCurrent() else { throw CancellationError() }
+                recordComputerState(state, at: Date())
+                if state == .notShown {
+                    // 临时转发进程不抢前台，真正的 Bot 自己显示窗口。
+                    sendToRunningInstance(deepLink: Self.computerPaneLink, activate: false)
+                }
+                try await bridge.focusWindow()
+                guard isCurrent() else { throw CancellationError() }
+                return
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                guard isCurrent() else { throw CancellationError() }
+                log("窗口接口暂不可用，改用系统方式打开电脑页", .warning)
+            }
+        }
+        openComputerPane()
+    }
+
     func restoreWindowThroughWorkspace() {
         sendToRunningInstance()
     }
 
     func computerWasActivated(at now: Date) {
+        computerForegroundNote = nil
         lastComputerActivationAt = now
         computerSchedule.activated(at: now)
         log("已确认 Bot 窗口到达前台，3 分钟后再次轮换")
@@ -905,6 +935,7 @@ final class BotController: Identifiable {
     private func recordComputerState(_ state: ComputerState, at now: Date) {
         computerState = state
         computerCheckedAt = now
+        if state == .onDevice { computerForegroundNote = nil }
     }
 
     private func setComputerIssue(_ message: String) {
@@ -913,7 +944,23 @@ final class BotController: Identifiable {
     }
 
     private func recordComputerFailure(_ error: Error) {
-        computerSchedule.completed(success: false, at: Date())
+        let now = Date()
+        if let reason = error as? ComputerError, case .activationInterrupted = reason {
+            computerSchedule.deferActivation(at: now)
+            computerRetryAt = computerSchedule.nextRecoveryAt
+            let message = reason.localizedDescription
+            if computerForegroundNote != message { log(message, .warning) }
+            computerForegroundNote = message
+            if computerState?.isAvailable == true,
+               computerCheckedAt.map({ now.timeIntervalSince($0) <= 90 }) == true {
+                computerIssue = nil
+            } else {
+                setComputerIssue(message)
+            }
+            return
+        }
+        computerForegroundNote = nil
+        computerSchedule.completed(success: false, at: now)
         computerRetryAt = computerSchedule.nextRecoveryAt
         setComputerIssue(error.localizedDescription)
     }
@@ -934,6 +981,7 @@ final class BotController: Identifiable {
         if let token = wakeToken { clearWake(token) }
         computerSchedule = ComputerMaintenanceSchedule()
         computerRetryAt = nil
+        computerForegroundNote = nil
     }
 
     private func invalidateComputerWork() {
@@ -945,6 +993,7 @@ final class BotController: Identifiable {
         computerState = nil
         computerCheckedAt = nil
         computerIssue = nil
+        computerForegroundNote = nil
         computerRetryAt = nil
         lastComputerActivationAt = nil
     }

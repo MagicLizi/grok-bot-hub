@@ -53,4 +53,16 @@ import Testing
         #expect(healthy.needsRecovery(for: .asleep, at: now.addingTimeInterval(1)))
         #expect(healthy.isDue(at: now))
     }
+
+    @Test func interruptedRotationRetriesWithoutCountingAnotherFailure() {
+        var schedule = ComputerMaintenanceSchedule()
+        schedule.completed(success: false, at: now)
+        let retry = now.addingTimeInterval(30)
+        schedule.deferActivation(at: retry)
+        #expect(schedule.failures == 1)
+        #expect(!schedule.isDue(at: retry.addingTimeInterval(29)))
+        #expect(schedule.isDue(at: retry.addingTimeInterval(30)))
+        #expect(schedule.needsRecovery(for: .awake, at: retry.addingTimeInterval(30)))
+        #expect(schedule.nextActivationAt == .distantPast)
+    }
 }

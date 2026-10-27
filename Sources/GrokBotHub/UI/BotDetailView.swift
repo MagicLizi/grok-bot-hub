@@ -207,6 +207,10 @@ struct BotDetailView: View {
                     Label(issue, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                         .textSelection(.enabled)
+                } else if let note = bot.computerForegroundNote {
+                    Label(note, systemImage: "info.circle")
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
                 }
                 if let checkedAt = bot.computerCheckedAt {
                     LabeledContent("最近检查", value: checkedAt.formatted(date: .omitted, time: .standard))
@@ -215,7 +219,8 @@ struct BotDetailView: View {
                     LabeledContent("最近前台轮换", value: activatedAt.formatted(date: .omitted, time: .standard))
                 }
                 if let retryAt = bot.computerRetryAt, bot.keepsComputerAwake {
-                    LabeledContent("下次恢复尝试", value: retryAt.formatted(date: .omitted, time: .standard))
+                    LabeledContent(bot.computerForegroundNote == nil ? "下次恢复尝试" : "下次前台轮换",
+                                   value: retryAt.formatted(date: .omitted, time: .standard))
                 }
                 if bot.autoComputerRecoveries > 0 {
                     LabeledContent("自动恢复成功", value: "\(bot.autoComputerRecoveries) 次")
