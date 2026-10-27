@@ -37,7 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let keepAliveCount = MainActor.assumeIsolated {
-            HubController.shared.bots.filter { $0.profile.keepAlive && $0.isRunning }.count
+            let hub = HubController.shared
+            return hub.keepAlivePaused ? 0 : hub.bots.filter { $0.profile.keepAlive && $0.isRunning }.count
         }
         guard keepAliveCount > 0, !UserDefaults.standard.bool(forKey: Self.suppressQuitWarning) else { return .terminateNow }
 

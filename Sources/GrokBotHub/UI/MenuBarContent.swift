@@ -4,7 +4,8 @@ struct MenuBarLabel: View {
     @Environment(HubController.self) private var hub
 
     var body: some View {
-        let symbol = hub.attentionCount > 0 ? "exclamationmark.triangle" : "square.stack.3d.up"
+        let symbol = hub.keepAlivePaused ? "pause.circle"
+            : hub.attentionCount > 0 ? "exclamationmark.triangle" : "square.stack.3d.up"
         Image(systemName: symbol)
         Text("\(hub.runningCount)")
     }
@@ -17,6 +18,10 @@ struct MenuBarContent: View {
     var body: some View {
         Text("\(hub.runningCount)/\(hub.bots.count) 个 Bot 运行中")
         Text("\(hub.awakeComputerCount) 台电脑已确认运行")
+        Button { hub.toggleKeepAlive() } label: {
+            Label(hub.keepAlivePaused ? "开启保活" : "暂停保活",
+                  systemImage: hub.keepAlivePaused ? "play.circle" : "pause.circle")
+        }
         Divider()
         ForEach(hub.bots) { bot in
             let status = BotStatus(bot)

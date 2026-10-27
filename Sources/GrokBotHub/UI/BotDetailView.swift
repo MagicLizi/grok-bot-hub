@@ -127,7 +127,9 @@ struct BotDetailView: View {
                 GridRow {
                     label("保活")
                     Toggle(isOn: Binding(get: { bot.profile.keepAlive }, set: { bot.setKeepAlive($0) })) {
-                        Text(bot.profile.keepAlive ? "开启：退出、崩溃或卡死都会被自动拉起" : "关闭：退出后不再自动拉起")
+                        Text(bot.profile.keepAlive
+                             ? (hub.keepAlivePaused ? "已开启，当前随全部保活暂停" : "开启：退出、崩溃或卡死都会被自动拉起")
+                             : "关闭：退出后不再自动拉起")
                             .foregroundStyle(.secondary)
                     }
                     .toggleStyle(.switch)
@@ -199,7 +201,7 @@ struct BotDetailView: View {
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
                     StatusPill(status: BotStatus(computer: bot))
                 }
-                Text(bot.keepsComputerAwake
+                Text(hub.keepAlivePaused ? "自动检查已暂停，可手动唤醒电脑" : bot.keepsComputerAwake
                      ? "自动检查已开启 · 每 30 秒检查，每 3 分钟轮换前台"
                      : "自动检查已关闭，可手动唤醒电脑")
                     .font(.callout).foregroundStyle(.secondary)

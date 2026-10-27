@@ -89,7 +89,9 @@ final class BotController: Identifiable {
     private var healthFailures = 0
     private var lastHealthCheck = Date.distantPast
     private var lastAuthCheck = Date.distantPast
-    private var checkInFlight = false
+    @ObservationIgnored private var checkTask: Task<Void, Never>?
+    @ObservationIgnored private var checkEpoch = UUID()
+    private var manualLaunchRequested = false
     private var restartRequested = false
     private var terminateRequestedAt: Date?
     private var activateOnNextLaunch = false
@@ -113,7 +115,9 @@ final class BotController: Identifiable {
 
     var pid: pid_t? { app?.processIdentifier }
     var isRunning: Bool { app != nil }
-    var keepsComputerAwake: Bool { (hub?.keepingComputersAwake ?? HubSettings.keepComputersAwake) && profile.keepAlive }
+    var keepAlivePaused: Bool { hub?.keepAlivePaused ?? HubSettings.keepAlivePaused }
+    private var keepsProcessAlive: Bool { profile.keepAlive && !keepAlivePaused }
+    var keepsComputerAwake: Bool { (hub?.keepingComputersAwake ?? HubSettings.keepComputersAwake) && keepsProcessAlive }
     var computerConfirmedAwake: Bool {
         isRunning && phase == .running && health == .ok && !loginActive && !logoutActive
             && terminateRequestedAt == nil && !restartRequested
@@ -130,6 +134,7 @@ final class BotController: Identifiable {
         activateOnNextLaunch = activate
         switch phase {
         case .stopped, .waitingRestart:
+            manualLaunchRequested = true
             phase = .waitingRestart(at: Date())
             hub?.tick()
         case .launching, .running, .stopping:
@@ -140,6 +145,7 @@ final class BotController: Identifiable {
     func stop() {
         invalidateComputerWork()
         restartRequested = false
+        manualLaunchRequested = false
         mutateProfile { $0.keepAlive = false }
         guard let app else {
             phase = .stopped
@@ -167,6 +173,20 @@ final class BotController: Identifiable {
         log(on ? "已开启保活" : "已关闭保活：退出后不再自动拉起")
         if !on { cancelAutomaticComputerWork() }
         if on { hub?.tick() }
+    }
+
+    /// 总开关不改各 Bot 的配置；取消正在执行的自动工作，恢复后重新检查。
+    func keepAlivePauseChanged() {
+        cancelAutomaticComputerWork()
+        checkEpoch = UUID()
+        checkTask?.cancel()
+        checkTask = nil
+        healthFailures = 0
+        lastHealthCheck = .distantPast
+        lastAuthCheck = .distantPast
+        if keepAlivePaused, case .waitingRestart = phase, !manualLaunchRequested {
+            phase = .stopped
+        }
     }
 
     func rename(_ name: String) {
@@ -272,11 +292,11 @@ final class BotController: Identifiable {
             }
             return false
         case .waitingRestart(let at):
-            guard now >= at, mayLaunch else { return false }
+            guard (manualLaunchRequested || keepsProcessAlive), now >= at, mayLaunch else { return false }
             launch(now: now)
             return true
         case .stopped:
-            guard profile.keepAlive, mayLaunch else { return false }
+            guard keepsProcessAlive, mayLaunch else { return false }
             launch(now: now)
             return true
         }
@@ -295,22 +315,23 @@ final class BotController: Identifiable {
     /// 按间隔安排健康检查和登录状态检查。
     func tick(now: Date) {
         scheduleComputerMaintenance(now: now)
-        guard app != nil, phase == .running, !checkInFlight, health != .noDebugPort else { return }
+        guard !keepAlivePaused, app != nil, phase == .running, checkTask == nil, health != .noDebugPort else { return }
         // 刚启动时每 3 秒试连一次；之后（包括出故障后）按正常间隔检查，卡死判定才是「连续约 2 分钟」
         let dueHealth = now.timeIntervalSince(lastHealthCheck) >= (health == .connecting ? 3 : Self.healthInterval)
         // 登录状态只在连接正常时读；连接本身由健康检查负责，失败也只由它计数
         let dueAuth = health == .ok && !loginActive && now.timeIntervalSince(lastAuthCheck) >= authInterval
         guard dueHealth || dueAuth else { return }
-        checkInFlight = true
-        Task {
-            await runChecks(health: dueHealth, auth: dueAuth)
-            checkInFlight = false
+        let epoch = checkEpoch
+        checkTask = Task {
+            defer { if checkEpoch == epoch { checkTask = nil } }
+            await runChecks(health: dueHealth, auth: dueAuth, epoch: epoch)
         }
     }
 
     // MARK: - 进程生命周期
 
     private func launch(now: Date) {
+        manualLaunchRequested = false
         guard let appURL = GrokBotApp.locate() else {
             log("没有找到 Grok Bot.app，30 秒后再试", .error)
             phase = .waitingRestart(at: now.addingTimeInterval(30))
@@ -340,6 +361,7 @@ final class BotController: Identifiable {
         let adopted: Bool
         if case .launching = phase { adopted = false } else { adopted = true }
         app = instance.app
+        manualLaunchRequested = false
         runningSince = instance.app.launchDate ?? now
         client = nil
         healthFailures = 0
@@ -370,8 +392,9 @@ final class BotController: Identifiable {
             phase = .stopped
         } else if restartRequested {
             restartRequested = false
+            manualLaunchRequested = true
             phase = .waitingRestart(at: now)
-        } else if profile.keepAlive {
+        } else if keepsProcessAlive {
             log("进程退出（运行了 \(Self.describe(uptime))）", .warning)
             scheduleRestart(now: now)
         } else {
@@ -381,6 +404,10 @@ final class BotController: Identifiable {
     }
 
     private func scheduleRestart(now: Date) {
+        guard keepsProcessAlive else {
+            phase = .stopped
+            return
+        }
         let delay = restartPolicy.delay(forConsecutiveRestarts: consecutiveRestarts)
         consecutiveRestarts += 1
         autoRestarts += 1
@@ -403,11 +430,14 @@ final class BotController: Identifiable {
 
     // MARK: - 健康与登录状态
 
-    private func runChecks(health dueHealth: Bool, auth dueAuth: Bool) async {
+    private func runChecks(health dueHealth: Bool, auth dueAuth: Bool, epoch: UUID) async {
         guard let pid, let since = runningSince else { return }
         let now = Date()
         // 每次 await 之后进程都可能已经换了，旧结果不能写到新进程上
-        var stillSameProcess: Bool { self.pid == pid }
+        var stillSameProcess: Bool {
+            self.pid == pid && checkEpoch == epoch && !keepAlivePaused && !Task.isCancelled
+        }
+        guard stillSameProcess else { return }
 
         if client == nil {
             guard dueHealth else { return }
@@ -450,13 +480,14 @@ final class BotController: Identifiable {
             }
         }
 
+        guard stillSameProcess else { return }
         if health == .ok, titleTaggedPID != pid {
             titleTaggedPID = pid
             try? await GrokBotBridge(client: client).tagWindowTitle(profile.name)
         }
 
-        if (dueAuth || becameHealthy) && !loginActive {
-            await refreshAuth(using: client)
+        if stillSameProcess, (dueAuth || becameHealthy) && !loginActive {
+            await refreshAuth(using: client, isCurrent: { stillSameProcess })
         }
     }
 
@@ -466,7 +497,7 @@ final class BotController: Identifiable {
         if healthFailures == 1 {
             log("健康检查失败：\(error.localizedDescription)", .warning)
         }
-        guard profile.keepAlive, HubSettings.restartUnresponsive, let app,
+        guard keepsProcessAlive, HubSettings.restartUnresponsive, let app,
               hangPolicy.shouldRestart(consecutiveFailures: healthFailures, runningSince: runningSince, now: Date()) else { return }
         log("连续 \(healthFailures) 次无响应，强制重启", .error)
         Notifier.post("\(profile.name) 无响应", "已强制结束并自动重新拉起。")
@@ -474,14 +505,15 @@ final class BotController: Identifiable {
         Self.kill(app)
     }
 
-    private func refreshAuth(using client: DevToolsClient) async {
+    private func refreshAuth(using client: DevToolsClient, isCurrent: @MainActor () -> Bool) async {
         lastAuthCheck = Date()
         let pid = self.pid
         do {
             let status = try await GrokBotBridge(client: client).authStatus()
-            guard self.pid == pid else { return }
+            guard self.pid == pid, isCurrent() else { return }
             apply(status)
         } catch {
+            guard isCurrent() else { return }
             HubLog.write("[\(profile.name)] 读取登录状态失败：\(error.localizedDescription)")
         }
     }
@@ -668,13 +700,13 @@ final class BotController: Identifiable {
     }
 
     private var automaticComputerMaintenanceEnabled: Bool {
-        HubSettings.keepComputersAwake && profile.keepAlive && isRunning
+        keepsComputerAwake && isRunning
             && phase == .running && auth == .loggedIn && !loginActive && !logoutActive
             && terminateRequestedAt == nil && !restartRequested && app?.isTerminated == false
     }
 
     private func scheduleComputerMaintenance(now: Date) {
-        guard HubSettings.keepComputersAwake, profile.keepAlive else {
+        guard keepsComputerAwake else {
             cancelAutomaticComputerWork()
             return
         }

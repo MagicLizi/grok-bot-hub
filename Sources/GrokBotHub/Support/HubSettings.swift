@@ -2,6 +2,7 @@ import Foundation
 
 /// 用户偏好，存在 UserDefaults；视图里用 @AppStorage 读写同一组 key。
 enum SettingKey {
+    static let keepAlivePaused = "keepAlivePaused"
     static let preventSleep = "preventSleep"
     static let keepDisplayAwake = "keepDisplayAwake"
     static let keepComputersAwake = "keepComputersAwake"
@@ -22,6 +23,7 @@ enum LoginMode: String, CaseIterable {
 enum HubSettings {
     static func register() {
         UserDefaults.standard.register(defaults: [
+            SettingKey.keepAlivePaused: false,
             SettingKey.preventSleep: true,
             SettingKey.keepDisplayAwake: true,
             SettingKey.keepComputersAwake: true,
@@ -31,6 +33,7 @@ enum HubSettings {
         ])
     }
 
+    static var keepAlivePaused: Bool { UserDefaults.standard.bool(forKey: SettingKey.keepAlivePaused) }
     static var preventSleep: Bool { UserDefaults.standard.bool(forKey: SettingKey.preventSleep) }
     static var keepDisplayAwake: Bool { UserDefaults.standard.bool(forKey: SettingKey.keepDisplayAwake) }
     static var keepComputersAwake: Bool { UserDefaults.standard.bool(forKey: SettingKey.keepComputersAwake) }

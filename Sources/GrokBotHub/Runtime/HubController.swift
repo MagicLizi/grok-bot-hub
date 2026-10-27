@@ -17,6 +17,7 @@ final class HubController {
     private(set) var sleepPrevented = false
     private(set) var displayKeptAwake = false
     private(set) var wakingAll = false
+    private(set) var keepAlivePaused = false
     private(set) var keepingComputersAwake = true
 
     let loginWindows = LoginWindowManager()
@@ -121,7 +122,7 @@ final class HubController {
         }
         unmanagedInstances = instances.filter { !claimed.contains($0.pid) }.count
 
-        let running = bots.contains(where: \.isRunning)
+        let running = !keepAlivePaused && bots.contains(where: \.isRunning)
         sleepGuard.update(!running ? nil
                           : HubSettings.keepDisplayAwake ? .display
                           : HubSettings.preventSleep ? .system : nil)
@@ -134,10 +135,21 @@ final class HubController {
     }
 
     func applySettings() {
-        keepingComputersAwake = HubSettings.keepComputersAwake
+        let paused = HubSettings.keepAlivePaused
+        if keepAlivePaused != paused {
+            keepAlivePaused = paused
+            bots.forEach { $0.keepAlivePauseChanged() }
+            HubLog.write(paused ? "已暂停全部自动保活，Bot 继续运行" : "已按各 Bot 原来的设置恢复自动保活")
+        }
+        keepingComputersAwake = HubSettings.keepComputersAwake && !paused
         GrokBotApp.applyAppNapPreference(disabled: HubSettings.disableGrokBotAppNap)
         lastAppLookup = .distantPast
         tick()
+    }
+
+    func toggleKeepAlive() {
+        UserDefaults.standard.set(!keepAlivePaused, forKey: SettingKey.keepAlivePaused)
+        applySettings()
     }
 
     // MARK: - Bot 管理

@@ -27,6 +27,13 @@ struct SettingsView: View {
             }
 
             Section("保活") {
+                if hub.keepAlivePaused {
+                    LabeledContent("全部保活已暂停") {
+                        Button("开启保活") { hub.toggleKeepAlive() }
+                    }
+                    Text("下面的设置会保留，开启保活后按原设置生效。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Toggle("自动保持所有 Bot 的电脑运行", isOn: $keepComputersAwake)
                 Text("每 30 秒检查已登录且开启保活的 Bot，休眠时自动唤醒，屏幕暂停或连接失败时自动恢复。每 3 分钟轮流把 Bot 窗口带到前台，停留 3 秒后切回原窗口。新加入并登录的 Bot 自动纳入；停止 Bot 或关闭保活会取消它的自动操作。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -53,7 +60,7 @@ struct SettingsView: View {
                         hub.launchAtLogin = on
                         launchAtLogin = hub.launchAtLogin
                     }
-                Text("管家启动后会自动拉起所有开启了保活的 Bot。退出管家不会关闭 Bot，但保活会暂停。")
+                Text("管家启动后会自动拉起所有开启了保活的 Bot；若已暂停全部保活，则保持暂停。退出管家不会关闭 Bot。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

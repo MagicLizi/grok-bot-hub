@@ -30,6 +30,8 @@ struct BotStatus {
         case .running:
             if bot.loginActive {
                 self.init(text: "登录中", tone: .busy)
+            } else if bot.keepAlivePaused {
+                self.init(text: "运行中（保活已暂停）", tone: .idle)
             } else if case .unresponsive = bot.health {
                 self.init(text: "无响应", tone: .bad)
             } else if bot.health == .noDebugPort {
@@ -52,6 +54,10 @@ struct BotStatus {
 
     @MainActor
     init(computer bot: BotController) {
+        if bot.keepAlivePaused, !bot.wakeActive {
+            self.init(text: "保活已暂停", tone: .idle)
+            return
+        }
         guard bot.isRunning else {
             self.init(text: "未运行", tone: .idle)
             return

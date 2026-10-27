@@ -28,6 +28,12 @@ struct MainView: View {
         }
         .toolbar {
             ToolbarItemGroup {
+                Button { hub.toggleKeepAlive() } label: {
+                    Label(hub.keepAlivePaused ? "开启保活" : "暂停保活",
+                          systemImage: hub.keepAlivePaused ? "play.circle.fill" : "pause.circle")
+                }
+                .labelStyle(.titleAndIcon)
+                .help(hub.keepAlivePaused ? "按各 Bot 原来的设置恢复自动保活" : "暂停自动拉起、检查、唤醒和前台轮换，Bot 继续运行")
                 Button { hub.startAll() } label: { Label("全部启动", systemImage: "play.fill") }
                     .help("启动所有 Bot 并开启保活")
                     .disabled(hub.bots.isEmpty)
@@ -45,7 +51,10 @@ struct MainView: View {
             NewBotSheet { bot in selection = bot.id }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            if hub.grokBotURL == nil { MissingGrokBotBanner() }
+            VStack(spacing: 0) {
+                if hub.keepAlivePaused { KeepAlivePausedBanner() }
+                if hub.grokBotURL == nil { MissingGrokBotBanner() }
+            }
         }
         .onAppear {
             if selection == nil { selection = hub.bots.first?.id }
@@ -103,6 +112,9 @@ private struct HubFooter: View {
         VStack(alignment: .leading, spacing: 4) {
             Divider()
             Group {
+                if hub.keepAlivePaused {
+                    Label("全部保活已暂停", systemImage: "pause.circle")
+                }
                 Label("\(hub.runningCount)/\(hub.bots.count) 个运行中", systemImage: "bolt.horizontal.circle")
                 TimelineView(.periodic(from: .now, by: 10)) { _ in
                     Label("\(hub.awakeComputerCount) 台电脑已确认运行", systemImage: "desktopcomputer")
@@ -128,6 +140,26 @@ private struct HubFooter: View {
             .padding(.horizontal, 12)
         }
         .padding(.bottom, 10)
+    }
+}
+
+private struct KeepAlivePausedBanner: View {
+    @Environment(HubController.self) private var hub
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "pause.circle.fill")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("全部保活已暂停").fontWeight(.semibold)
+                Text("Bot 继续运行，自动拉起、检查和前台轮换已暂停。")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("开启保活") { hub.toggleKeepAlive() }
+        }
+        .padding(12)
+        .background(.bar)
     }
 }
 
