@@ -6,24 +6,31 @@ struct MainView: View {
     @ViewState private var showingNewBot = false
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-        } detail: {
-            if let bot = hub.bots.first(where: { $0.id == selection }) {
-                BotDetailView(bot: bot)
-                    .id(bot.id)
-            } else if hub.bots.isEmpty {
-                ContentUnavailableView {
-                    Label("还没有 Bot", systemImage: "square.stack.3d.up")
-                } description: {
-                    Text("每个 Bot 是一个独立的 Grok Bot 实例，有自己的账号和数据，管家负责登录和保活。")
-                } actions: {
-                    Button("新建 Bot") { showingNewBot = true }
-                        .buttonStyle(.borderedProminent)
+        // 分栏里的原生列表不会可靠地避让外层 safeAreaInset，提示栏直接参与布局。
+        VStack(spacing: 0) {
+            if hub.keepAlivePaused { KeepAlivePausedBanner() }
+            if hub.grokBotURL == nil { MissingGrokBotBanner() }
+            if hub.keepAlivePaused || hub.grokBotURL == nil { Divider() }
+
+            NavigationSplitView {
+                sidebar
+                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+            } detail: {
+                if let bot = hub.bots.first(where: { $0.id == selection }) {
+                    BotDetailView(bot: bot)
+                        .id(bot.id)
+                } else if hub.bots.isEmpty {
+                    ContentUnavailableView {
+                        Label("还没有 Bot", systemImage: "square.stack.3d.up")
+                    } description: {
+                        Text("每个 Bot 是一个独立的 Grok Bot 实例，有自己的账号和数据，管家负责登录和保活。")
+                    } actions: {
+                        Button("新建 Bot") { showingNewBot = true }
+                            .buttonStyle(.borderedProminent)
+                    }
+                } else {
+                    ContentUnavailableView("选择一个 Bot", systemImage: "sidebar.left")
                 }
-            } else {
-                ContentUnavailableView("选择一个 Bot", systemImage: "sidebar.left")
             }
         }
         .toolbar {
@@ -49,12 +56,6 @@ struct MainView: View {
         }
         .sheet(isPresented: $showingNewBot) {
             NewBotSheet { bot in selection = bot.id }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 0) {
-                if hub.keepAlivePaused { KeepAlivePausedBanner() }
-                if hub.grokBotURL == nil { MissingGrokBotBanner() }
-            }
         }
         .onAppear {
             if selection == nil { selection = hub.bots.first?.id }
