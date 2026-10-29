@@ -208,20 +208,12 @@ final class BotController: Identifiable {
 
     /// 主窗口被关掉后（实例仍在后台运行），让它重新显示主窗口。
     private func reopenMainWindow() {
-        sendToRunningInstance()
-    }
-
-    /// 用同一个数据目录再启动一次 Grok Bot：单实例锁会让新进程立刻退出，并把参数（包括深链）
-    /// 转交给这个 Bot 自己的实例，同时把它的窗口带到前台。深链因此只会送到这一个实例。
-    private func sendToRunningInstance(deepLink: String? = nil, activate: Bool = true) {
-        guard let appURL = GrokBotApp.locate() else { return }
-        let config = NSWorkspace.OpenConfiguration()
-        config.createsNewApplicationInstance = true
-        config.activates = activate
-        // 不带 --remote-debugging-port，避免这个临时进程覆盖 DevToolsActivePort
-        config.arguments = ["\(LaunchArguments.userDataDirFlag)=\(profile.dataDir.path)"] + (deepLink.map { [$0] } ?? [])
-        config.addsToRecentItems = false
-        NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+        guard let app else { return }
+        do {
+            try GrokBotApp.reopenRunningInstance(app)
+        } catch {
+            log("向现有 Bot 发送窗口请求失败：\(error.localizedDescription)", .warning)
+        }
     }
 
     func logout() {
@@ -679,8 +671,6 @@ final class BotController: Identifiable {
 
     // MARK: - 电脑巡检与恢复
 
-    private static let computerPaneLink = "grokbot://app/v1/sidebar?tab=computer"
-
     enum ComputerError: LocalizedError {
         case screenLocked, cannotActivate, activationInterrupted, notLoggedIn, paused, notShown, timedOut
         case stuck(ComputerState)
@@ -759,38 +749,24 @@ final class BotController: Identifiable {
         }
     }
 
-    func openComputerPane() {
-        sendToRunningInstance(deepLink: Self.computerPaneLink)
-    }
-
-    /// 已有电脑画面时直接聚焦正确实例；只有需要导航时才转交深链。
+    /// 已有电脑画面时直接聚焦；需要导航时，只操作这个实例自己的电脑页签。
     func prepareComputerWindow(isCurrent: @MainActor () -> Bool) async throws {
         guard isCurrent() else { throw CancellationError() }
-        if let client {
-            let bridge = GrokBotBridge(client: client)
-            do {
-                let state = try await bridge.computerState()
-                guard isCurrent() else { throw CancellationError() }
-                recordComputerState(state, at: Date())
-                if state == .notShown {
-                    // 临时转发进程不抢前台，真正的 Bot 自己显示窗口。
-                    sendToRunningInstance(deepLink: Self.computerPaneLink, activate: false)
-                }
-                try await bridge.focusWindow()
-                guard isCurrent() else { throw CancellationError() }
-                return
-            } catch is CancellationError {
-                throw CancellationError()
-            } catch {
-                guard isCurrent() else { throw CancellationError() }
-                log("窗口接口暂不可用，改用系统方式打开电脑页", .warning)
-            }
+        let bridge = try await waitForBridge(timeout: 30, isCurrent: isCurrent)
+        let state = try await bridge.computerState()
+        guard isCurrent() else { throw CancellationError() }
+        recordComputerState(state, at: Date())
+        if state == .notShown {
+            let opened = try await bridge.openComputerPane()
+            guard isCurrent() else { throw CancellationError() }
+            guard opened else { throw ComputerError.notShown }
         }
-        openComputerPane()
+        try await bridge.focusWindow()
+        guard isCurrent() else { throw CancellationError() }
     }
 
-    func restoreWindowThroughWorkspace() {
-        sendToRunningInstance()
+    func restoreWindow() {
+        reopenMainWindow()
     }
 
     func computerWasActivated(at now: Date) {

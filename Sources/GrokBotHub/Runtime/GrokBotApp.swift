@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import HubCore
 
 /// 本机安装的 Grok Bot.app。
@@ -34,6 +35,21 @@ enum GrokBotApp {
         config.addsToRecentItems = false
         config.promptsUserIfNeeded = false
         return try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+    }
+
+    /// 给已接管的进程发送系统重开事件，不再启动临时转发进程。
+    /// 同目录的 Electron 单实例锁在更新或异常时可能失效，不能靠再次启动来转发。
+    static func reopenRunningInstance(_ app: NSRunningApplication) throws {
+        guard app.bundleIdentifier == bundleID, !app.isTerminated else {
+            throw CocoaError(.executableNotLoadable)
+        }
+        let event = NSAppleEventDescriptor(
+            eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEReopenApplication),
+            targetDescriptor: NSAppleEventDescriptor(processIdentifier: app.processIdentifier),
+            returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID)
+        )
+        _ = try event.sendEvent(options: [.noReply, .neverInteract], timeout: 2)
+        app.activate(options: [.activateAllWindows])
     }
 
     /// Grok Bot 进入 App Nap 后计时器和网络会被节流。这个偏好写在 Grok Bot 自己的 defaults 域里，

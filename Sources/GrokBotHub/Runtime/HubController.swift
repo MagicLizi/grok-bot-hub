@@ -111,8 +111,9 @@ final class HubController {
                 } ?? false
             }
             matches.forEach { claimed.insert($0.pid) }
-            // 同一目录可能短暂出现两个进程（单实例锁让后来的那个马上退出），优先认已经接管的那个
-            let instance = matches.first { $0.pid == bot.pid } ?? matches.first
+            // 同目录可能残留重复进程，优先保留已接管的进程，其次选带调试端口的实例。
+            let instance = matches.first { $0.pid == bot.pid }
+                ?? matches.first { $0.debuggingEnabled } ?? matches.first
             let mayLaunch = !launched && grokBotURL != nil && now.timeIntervalSince(lastLaunchAt) >= Self.launchSpacing
             if bot.reconcile(instance: instance, now: now, mayLaunch: mayLaunch) {
                 launched = true
@@ -292,9 +293,9 @@ final class HubController {
         if !previous.activate(options: []) {
             // 后台应用直接 activate() 可能被 macOS 拒绝，改走 LaunchServices。
             if let managed = bots.first(where: { $0.pid == previous.processIdentifier }) {
-                // 多开的 Grok Bot 必须带回它自己的数据目录，不能打开默认实例。
-                managed.restoreWindowThroughWorkspace()
-            } else if let url = previous.bundleURL, let bundleID = previous.bundleIdentifier,
+                managed.restoreWindow()
+            } else if previous.bundleIdentifier != GrokBotApp.bundleID,
+                      let url = previous.bundleURL, let bundleID = previous.bundleIdentifier,
                       NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).count == 1 {
                 let config = NSWorkspace.OpenConfiguration()
                 config.createsNewApplicationInstance = false

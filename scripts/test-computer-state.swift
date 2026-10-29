@@ -16,6 +16,7 @@ context.setObject(report, forKeyedSubscript: "report" as NSString)
 context.setObject(source, forKeyedSubscript: "bridgeSource" as NSString)
 context.evaluateScript(#"""
 const stateJS = bridgeSource.split('private static let computerStateJS = """')[1].split('"""')[0];
+const paneNavigationJS = bridgeSource.split('private static let openComputerPaneJS = """')[1].split('"""')[0];
 const clickJS = bridgeSource.split('private func clickIf(')[1].split('"""')[1];
 const actionTarget = name => bridgeSource.split(`func ${name}(`)[1].match(/clickIf\("(.*?)"\)/s)[1];
 
@@ -116,6 +117,49 @@ test('fullscreen recovery only exits the computer fullscreen', () => {
   equal(exit.clicks, 1);
   equal(fixture({ buttons: [exit] }).click('exitComputerFullscreen'), false);
   equal(exit.clicks, 1);
+});
+
+function navigateComputer(tabs, unrelated = []) {
+  const document = {
+    querySelectorAll(selector) {
+      return selector.startsWith('.sand-info-pane ') ? tabs : [...tabs, ...unrelated];
+    },
+  };
+  return new Function('document', `return (${paneNavigationJS});`)(document);
+}
+
+function tab(text, controls = '', disabled = false, ariaDisabled = false) {
+  const element = button(text, disabled);
+  element.getAttribute = name => name === 'aria-controls' ? controls
+    : name === 'aria-disabled' && ariaDisabled ? 'true' : null;
+  return element;
+}
+
+test('computer navigation uses the panel target even when its label changes', () => {
+  const computer = tab('Rechner', '_r_29_-overview-panel-computer');
+  const overview = tab('详情', '_r_29_-overview-panel-overview');
+  equal(navigateComputer([overview, computer]), true);
+  equal(computer.clicks, 1);
+  equal(overview.clicks, 0);
+});
+
+test('computer navigation supports localized tabs and ignores unrelated controls', () => {
+  for (const label of ['电脑', '電腦', 'Computer']) {
+    const computer = tab(label);
+    equal(navigateComputer([computer]), true);
+    equal(computer.clicks, 1);
+  }
+  const unrelated = tab('Computer');
+  equal(navigateComputer([tab('资料库')], [unrelated]), false);
+  equal(unrelated.clicks, 0);
+});
+
+test('computer navigation does not click unavailable or disabled tabs', () => {
+  equal(navigateComputer([]), false);
+  for (const computer of [tab('电脑', '', true), tab('Computer', '', false, true)]) {
+    equal(navigateComputer([computer]), false);
+    equal(computer.clicks, 0);
+  }
 });
 
 """#)

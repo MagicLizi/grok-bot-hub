@@ -27,6 +27,23 @@ struct GrokBotBridge {
         _ = try await callMain("focusWindow", timeout: 5)
     }
 
+    /// 只点击当前 Bot 详情面板里的电脑页签，不触发系统协议或新进程。
+    private static let openComputerPaneJS = """
+    (() => {
+      const tabs = [...document.querySelectorAll('.sand-info-pane [role="tablist"] [role="tab"]')];
+      const target = tabs.find(tab => (tab.getAttribute('aria-controls') || '').endsWith('-overview-panel-computer'))
+        || tabs.find(tab => [tab.getAttribute('aria-label'), tab.innerText, tab.title]
+          .some(text => /^(电脑|電腦|Computer)$/i.test((text || '').trim())));
+      if (!target || target.disabled || target.getAttribute('aria-disabled') === 'true') return false;
+      target.click();
+      return true;
+    })()
+    """
+
+    func openComputerPane() async throws -> Bool {
+        try await run(Self.openComputerPaneJS) as? Bool ?? false
+    }
+
     func isReady() async throws -> Bool {
         try await run("typeof window.desktop?.main?.getCursorAuthStatus === 'function'") as? Bool ?? false
     }
