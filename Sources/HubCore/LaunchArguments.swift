@@ -2,7 +2,7 @@ import Foundation
 
 /// Grok Bot（Electron）实例的启动参数约定。
 ///
-/// - `--user-data-dir`：Grok Bot 官方支持的隔离数据目录参数，账号、缓存、单实例锁都按目录隔离。
+/// - `SAND_USER_DATA_DIR`：Grok Bot 0.78.1 使用的隔离目录；保留旧参数以兼容旧版及进程识别。
 /// - `--remote-debugging-port=0`：Chromium 随机选一个仅监听 127.0.0.1 的端口，并写入
 ///   `<user-data-dir>/DevToolsActivePort`，宿主据此接管登录与健康检查。
 public enum LaunchArguments {
@@ -11,6 +11,13 @@ public enum LaunchArguments {
 
     public static func make(userDataDir: String) -> [String] {
         ["\(userDataDirFlag)=\(userDataDir)", "\(remoteDebuggingFlag)=0"]
+    }
+
+    /// 新版本会覆盖 Chromium 的 --user-data-dir，必须同时使用应用自己的环境变量。
+    /// 显式指定业务数据目录，避免继承的 SAND_DATA_ROOT 把多个账号导向同一目录。
+    public static func environment(userDataDir: String) -> [String: String] {
+        ["SAND_USER_DATA_DIR": userDataDir,
+         "SAND_DATA_ROOT": URL(fileURLWithPath: userDataDir).appendingPathComponent("sand-data").path]
     }
 
     /// 支持 `--flag=value` 与 `--flag value` 两种写法（与 Grok Bot 自身的解析一致）。
