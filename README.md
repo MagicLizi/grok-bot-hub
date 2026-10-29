@@ -61,7 +61,7 @@ swift scripts/test-computer-state.swift  # 检查电脑界面识别和操作范�
 
 | 环节 | 做法 |
 | --- | --- |
-| 隔离 | 用 Grok Bot 官方支持的 `--user-data-dir=<目录>` 参数启动，原本放在 `~/.grokbot` 的数据也一并落到该目录下的 `sand-data` |
+| 隔离 | 启动及恢复窗口时传入 `SAND_USER_DATA_DIR=<目录>` 和 `SAND_DATA_ROOT=<目录>/sand-data`，分别隔离 Electron 会话与账号业务数据；保留 `--user-data-dir=<目录>` 参数用于旧版兼容和进程识别。Grok Bot 0.78.1 会覆盖 Chromium 的目录参数，仅传参数已无法隔离 |
 | 启动方式 | 通过 LaunchServices（`NSWorkspace`）新开实例，而不是直接起子进程，这样麦克风、录屏、辅助功能等权限仍然记在 Grok Bot 名下 |
 | 接管 | 同时传 `--remote-debugging-port=0`，Chromium 会随机选一个只监听 127.0.0.1 的端口，写进 `<目录>/DevToolsActivePort`。管家连接前先用 `SystemInfo.getProcessInfo` 核对端口背后的进程 PID |
 | 登录 | 调用 Grok Bot 界面自己用的 `window.desktop.main.loginCursor()` / `copyCursorLoginLink()`，拿到 `cursor.com/loginDeepControl` 链接后，在临时会话的 `ASWebAuthenticationSession` 里打开（备用：每个 Bot 一个 `WKWebsiteDataStore` 的内置浏览器）。token 由 Grok Bot 用自己私有的 verifier 轮询 `api2.cursor.sh/auth/poll` 领取，不依赖 `grokbot://` 回调，因此多开时不会串号；登录页跳转的 `grokbot://` 回调会被截下丢弃 |
@@ -79,6 +79,7 @@ swift scripts/test-computer-state.swift  # 检查电脑界面识别和操作范�
 
 - **调试端口**：只监听 127.0.0.1，但本机上以你的账号运行的其他程序理论上也能连接并操控 Bot。这是选择全自动登录和状态检测的代价。
 - **依赖 Grok Bot 内部接口**：登录自动化和登录状态检测用的是 Grok Bot 0.75.8 渲染进程里的 `window.desktop.main.*`。如果 Grok Bot 改版后这些接口变了，这两项会失效，多开和进程保活不受影响。
+- **0.78.1 目录兼容**：已适配新版的隔离环境变量。安装修复版后需重启管家管理的旧实例，才能使用正确的独立目录；不自动复制默认目录的登录数据，避免把同一账号复制给多个 Bot。
 - **自动更新**：某个实例安装更新并重启时，Grok Bot 的更新器可能额外拉起一个不带参数的默认实例。管家会照常把自己管理的实例拉起；默认实例会在侧栏底部显示为「非管家实例」，可以手动关掉。
 - **退出管家后保活暂停**：Bot 会继续运行，但不再被自动拉起，下次打开管家时会重新接管。
 

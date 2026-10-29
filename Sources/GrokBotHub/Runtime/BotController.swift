@@ -220,6 +220,7 @@ final class BotController: Identifiable {
         config.activates = activate
         // 不带 --remote-debugging-port，避免这个临时进程覆盖 DevToolsActivePort
         config.arguments = ["\(LaunchArguments.userDataDirFlag)=\(profile.dataDir.path)"] + (deepLink.map { [$0] } ?? [])
+        config.environment = LaunchArguments.environment(userDataDir: profile.dataDir.path)
         config.addsToRecentItems = false
         NSWorkspace.shared.openApplication(at: appURL, configuration: config)
     }

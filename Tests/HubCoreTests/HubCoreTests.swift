@@ -7,6 +7,15 @@ import Testing
         #expect(LaunchArguments.make(userDataDir: "/a b/c") == ["--user-data-dir=/a b/c", "--remote-debugging-port=0"])
     }
 
+    @Test func isolatesElectronAndAccountData() {
+        let first = LaunchArguments.environment(userDataDir: "/a b/first")
+        let second = LaunchArguments.environment(userDataDir: "/a b/second")
+        #expect(first["SAND_USER_DATA_DIR"] == "/a b/first")
+        #expect(first["SAND_DATA_ROOT"] == "/a b/first/sand-data")
+        #expect(second["SAND_USER_DATA_DIR"] != first["SAND_USER_DATA_DIR"])
+        #expect(second["SAND_DATA_ROOT"] != first["SAND_DATA_ROOT"])
+    }
+
     @Test func parsesBothFlagForms() {
         #expect(LaunchArguments.userDataDir(in: ["--user-data-dir=/x/y"]) == "/x/y")
         #expect(LaunchArguments.userDataDir(in: ["--user-data-dir", "/x/y", "--foo"]) == "/x/y")

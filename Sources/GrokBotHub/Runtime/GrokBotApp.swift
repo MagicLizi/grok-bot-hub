@@ -30,6 +30,7 @@ enum GrokBotApp {
         let config = NSWorkspace.OpenConfiguration()
         config.createsNewApplicationInstance = true
         config.arguments = LaunchArguments.make(userDataDir: userDataDir.path)
+        config.environment = LaunchArguments.environment(userDataDir: userDataDir.path)
         config.activates = activate
         config.addsToRecentItems = false
         config.promptsUserIfNeeded = false
