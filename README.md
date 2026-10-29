@@ -61,7 +61,7 @@ swift scripts/test-computer-state.swift  # 检查电脑界面识别和操作范�
 
 | 环节 | 做法 |
 | --- | --- |
-| 隔离 | 用 Grok Bot 官方支持的 `--user-data-dir=<目录>` 参数启动，原本放在 `~/.grokbot` 的数据也一并落到该目录下的 `sand-data` |
+| 隔离 | 启动时同时传 `--user-data-dir=<目录>` 参数和 `SAND_USER_DATA_DIR=<目录>` 环境变量：0.77 及以前认参数，0.78 起入口会把 userData 重置回默认目录、改认环境变量。原本放在 `~/.grokbot` 的数据也一并落到该目录下的 `sand-data` |
 | 启动方式 | 通过 LaunchServices（`NSWorkspace`）新开实例，而不是直接起子进程，这样麦克风、录屏、辅助功能等权限仍然记在 Grok Bot 名下 |
 | 接管 | 同时传 `--remote-debugging-port=0`，Chromium 会随机选一个只监听 127.0.0.1 的端口，写进 `<目录>/DevToolsActivePort`。管家连接前先用 `SystemInfo.getProcessInfo` 核对端口背后的进程 PID |
 | 登录 | 调用 Grok Bot 界面自己用的 `window.desktop.main.loginCursor()` / `copyCursorLoginLink()`，拿到 `cursor.com/loginDeepControl` 链接后，在临时会话的 `ASWebAuthenticationSession` 里打开（备用：每个 Bot 一个 `WKWebsiteDataStore` 的内置浏览器）。token 由 Grok Bot 用自己私有的 verifier 轮询 `api2.cursor.sh/auth/poll` 领取，不依赖 `grokbot://` 回调，因此多开时不会串号；登录页跳转的 `grokbot://` 回调会被截下丢弃 |

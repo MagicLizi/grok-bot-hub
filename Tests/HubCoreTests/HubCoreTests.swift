@@ -5,6 +5,7 @@ import Testing
 @Suite struct LaunchArgumentsTests {
     @Test func makesIsolatedArguments() {
         #expect(LaunchArguments.make(userDataDir: "/a b/c") == ["--user-data-dir=/a b/c", "--remote-debugging-port=0"])
+        #expect(LaunchArguments.environment(userDataDir: "/a b/c") == ["SAND_USER_DATA_DIR": "/a b/c"])
     }
 
     @Test func parsesBothFlagForms() {

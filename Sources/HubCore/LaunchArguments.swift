@@ -9,8 +9,16 @@ public enum LaunchArguments {
     public static let userDataDirFlag = "--user-data-dir"
     public static let remoteDebuggingFlag = "--remote-debugging-port"
 
+    /// Grok Bot 0.78 起，入口会先把 userData 重置回默认目录，`--user-data-dir` 不再生效；
+    /// 改认这个环境变量做隔离。两者都传：旧版靠参数，新版靠环境变量。
+    public static let userDataDirEnv = "SAND_USER_DATA_DIR"
+
     public static func make(userDataDir: String) -> [String] {
         ["\(userDataDirFlag)=\(userDataDir)", "\(remoteDebuggingFlag)=0"]
+    }
+
+    public static func environment(userDataDir: String) -> [String: String] {
+        [userDataDirEnv: userDataDir]
     }
 
     /// 支持 `--flag=value` 与 `--flag value` 两种写法（与 Grok Bot 自身的解析一致）。
