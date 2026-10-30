@@ -23,11 +23,12 @@ final class HubController {
     let loginWindows = LoginWindowManager()
 
     @ObservationIgnored private let sleepGuard = SleepGuard()
-    @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var monitoringTask: Task<Void, Never>?
     @ObservationIgnored private var activity: NSObjectProtocol?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     @ObservationIgnored private var lastLaunchAt = Date.distantPast
     @ObservationIgnored private var lastAppLookup = Date.distantPast
+    @ObservationIgnored private var lastHeartbeatAt = Date.distantPast
     @ObservationIgnored private var started = false
     @ObservationIgnored private var computerForegroundBusy = false
 
@@ -68,10 +69,9 @@ final class HubController {
             MainActor.assumeIsolated { self?.tick() }
         })
 
-        timer = Timer.scheduledTimer(withTimeInterval: Self.tickInterval, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tick() }
+        monitoringTask = MonitoringLoop.start(every: .seconds(Self.tickInterval)) { [weak self] in
+            await self?.tick()
         }
-        timer?.tolerance = 0.5
         tick()
 
         #if DEBUG
@@ -129,6 +129,10 @@ final class HubController {
                           : HubSettings.preventSleep ? .system : nil)
         sleepPrevented = sleepGuard.isHolding
         displayKeptAwake = sleepGuard.mode == .display
+        if now.timeIntervalSince(lastHeartbeatAt) >= 300 {
+            lastHeartbeatAt = now
+            HubLog.write("保活巡检心跳：\(runningCount)/\(bots.count) 个 Bot 运行中，自动电脑检查\(keepingComputersAwake ? "已开启" : "已暂停")")
+        }
     }
 
     func persist() {
